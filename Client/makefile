@@ -1,5 +1,5 @@
 client: client.o utils.o
-	cc client.o utils.o -o client -lpthread
+	cc client.o utils.o -o client -lpthread -lm
 client.o: client.c utils.h
 	cc -c client.c
 utils.o: utils.c utils.h
