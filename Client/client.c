@@ -12,6 +12,9 @@ void* ThreadWorker(void *arg)
     int slot = data->slot;
     struct SharedMemory *shmPTR = data->shmPTR;
 
+    struct timespec ts;
+    TimerStart(&ts);
+
     int startInd = INT_BITS * slot;
 
     while (1)
@@ -25,6 +28,9 @@ void* ThreadWorker(void *arg)
         else if (shmPTR->slotStatus[slot] == 0) // we are done reading for this slot
             break;
     }
+
+    int timeTaken = TimerStop(&ts);
+    printf("slot done: %d, time taken: %ds\n", slot, timeTaken);
 }
 
 int main() 

@@ -20,3 +20,15 @@ int msleep(long msec)
 
     return res;
 }
+
+void TimerStart(struct timespec *tp)
+{
+    clock_gettime(0, tp);
+}
+
+int TimerStop(struct timespec *start)
+{
+    struct timespec end;
+    clock_gettime(0, &end);
+    return end.tv_sec - start->tv_sec;
+}

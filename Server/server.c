@@ -13,29 +13,38 @@ int numbersToProcessFlag[NUM_SLOTS * INT_BITS];
 int startedFactorisingFlag[NUM_SLOTS * INT_BITS];
 pthread_mutex_t mutexArr[NUM_SLOTS];
 
+void SendFactor(int number, int factor, int slot, struct SharedMemory* shmPTR)
+{
+    //printf("found factor: %d, for: %d, in slot: %d\n", factor, number, slot);
+    pthread_mutex_lock(&mutexArr[slot]); // first get the lock
+
+    // wait until the server flag is 0
+    while (shmPTR->serverFlag[slot] == 1)
+        ;
+
+    //printf("sending factor: %d, for: %d, in slot: %d\n", factor, number, slot);
+
+    // server flag is now 0
+    shmPTR->slot[slot] = factor;
+    shmPTR->serverFlag[slot] = 1;
+
+    pthread_mutex_unlock(&mutexArr[slot]); // release the lock
+}
+
 void FactoriseNumber(int number, int slot, struct SharedMemory* shmPTR)
 {
-    for (int i = 1; i <= number; i++)
+    int bound = number / 2;
+    for (int i = 1; i <= bound; i++)
     {
         // found factor
         if (number % i == 0)
         {
-            printf("found factor: %d, for: %d, in slot: %d\n", i, number, slot);
-            pthread_mutex_lock(&mutexArr[slot]); // first get the lock
-
-            // wait until the server flag is 0
-            while (shmPTR->serverFlag[slot] == 1)
-                ;
-
-            printf("sending factor: %d, for: %d, in slot: %d\n", i, number, slot);
-
-            // server flag is now 0
-            shmPTR->slot[slot] = i;
-            shmPTR->serverFlag[slot] = 1;
-
-            pthread_mutex_unlock(&mutexArr[slot]); // release the lock
+            SendFactor(number, i, slot, shmPTR);
         }
     }
+
+    // send the number itself as a factor
+    SendFactor(number, number, slot, shmPTR);
 }
 
 void* ThreadWorker(void *arg)
@@ -59,18 +68,18 @@ void* ThreadWorker(void *arg)
             startedFactorisingFlag[localInd] = 1;
 
             int number = numbersToProcess[localInd];
-            printf("slot: %d, ind: %d, number: %d, localind: %d\n", slot, ind, number, localInd);
+            //printf("slot: %d, ind: %d, number: %d, localind: %d\n", slot, ind, number, localInd);
             FactoriseNumber(number, slot, shmPTR);
-            printf("done factoring slot: %d, ind: %d, number: %d, localind: %d\n", slot, ind, number, localInd);
+            //printf("done factoring slot: %d, ind: %d, number: %d, localind: %d\n", slot, ind, number, localInd);
 
             numbersToProcessFlag[localInd] = DONE;
 
             int done = 1;
 
-            // check all the threads for this slot have started
-            for (int i = startInd; i <= startInd + 2; i++)
+            for (int i = startInd; i <= endInd; i++)
             {
-                if (startedFactorisingFlag[i] == 0)
+                //printf("checking: %d, status: %d, slot: %d, ind: %d\n", i, numbersToProcessFlag[i], slot, ind);
+                if (numbersToProcessFlag[i] == IN_PROGRESS || startedFactorisingFlag[i] == 0)
                 {
                     done = 0;
                     break;
@@ -79,27 +88,14 @@ void* ThreadWorker(void *arg)
 
             if (done == 1)
             {
-                for (int i = startInd; i <= endInd; i++)
+                for (int i = 0; i < INT_BITS; i++)
                 {
-                    printf("checking: %d, status: %d, slot: %d, ind: %d\n", i, numbersToProcessFlag[i], slot, ind);
-                    if (numbersToProcessFlag[i] == IN_PROGRESS)
-                    {
-                        done = 0;
-                        break;
-                    }
+                    int curInd = (INT_BITS * slot) + i;
+                    startedFactorisingFlag[curInd] = 0;
                 }
-
-                if (done == 1)
-                {
-                    for (int i = 0; i < INT_BITS; i++)
-                    {
-                        int curInd = (INT_BITS * slot) + i;
-                        startedFactorisingFlag[curInd] = 0;
-                    }
-                    
-                    shmPTR->slotStatus[slot] = 0;
-                    printf("done: %d\n", slot);
-                }
+                
+                shmPTR->slotStatus[slot] = 0;
+                printf("slot done: %d\n", slot);
             }
         }
     }
@@ -189,9 +185,9 @@ int main()
             {
                 shmPTR->slotStatus[freeSlot] = 1;
                 
-                printf("Num: %d\n", num);
+                printf("generating factors for: %d, on slot: %d\n", num, freeSlot);
 
-                for (int i = 0; i < 2; i++)
+                for (int i = 0; i < INT_BITS; i++)
                 {
                     int curInd = (INT_BITS * freeSlot) + i;
                     int curNum = abs(RotateNumber(num, i));

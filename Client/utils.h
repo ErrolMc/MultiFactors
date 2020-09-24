@@ -11,6 +11,8 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
+#include <time.h>
+
 #define INT_BITS 32
 #define NUM_SLOTS 10
 
@@ -27,5 +29,7 @@ struct SharedMemory
 };
 
 int msleep(long msec);
+void TimerStart(struct timespec *tp);
+int TimerStop(struct timespec *start);
 
 #endif
