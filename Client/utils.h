@@ -15,6 +15,7 @@
 
 #define INT_BITS 32
 #define NUM_SLOTS 10
+#define PROG_DISPLAY_LENGTH 10
 
 struct SharedMemory
 {
@@ -24,12 +25,15 @@ struct SharedMemory
     int number; 
     int slot[NUM_SLOTS];
     int slotStatus[NUM_SLOTS];
+    int slotProgress[NUM_SLOTS];
 
     int active;
 };
 
 int msleep(long msec);
 void TimerStart(struct timespec *tp);
-int TimerStop(struct timespec *start);
+int TimerStop_s(struct timespec *start);
+long TimerStop_ms(struct timespec *start);
+void BarDisplay(int full, int max);
 
 #endif

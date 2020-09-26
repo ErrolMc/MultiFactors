@@ -28,6 +28,7 @@ struct SharedMemory
     int number; 
     int slot[NUM_SLOTS];
     int slotStatus[NUM_SLOTS];
+    int slotProgress[NUM_SLOTS];
 
     int active;
 };

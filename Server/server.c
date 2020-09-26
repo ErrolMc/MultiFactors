@@ -45,6 +45,11 @@ void FactoriseNumber(int number, int slot, struct SharedMemory* shmPTR)
 
     // send the number itself as a factor
     SendFactor(number, number, slot, shmPTR);
+
+    // increase the progress
+    pthread_mutex_lock(&mutexArr[slot]); // first get the lock
+    shmPTR->slotProgress[slot]++;
+    pthread_mutex_unlock(&mutexArr[slot]); // release the lock
 }
 
 void* ThreadWorker(void *arg)
@@ -179,11 +184,12 @@ int main()
             }
 
             shmPTR->number = freeSlot;
-            shmPTR->clientFlag = 0;
+            
 
             if (freeSlot != -1)
             {
                 shmPTR->slotStatus[freeSlot] = 1;
+                shmPTR->slotProgress[freeSlot] = 0;
                 
                 printf("generating factors for: %d, on slot: %d\n", num, freeSlot);
 
@@ -196,6 +202,7 @@ int main()
                     numbersToProcessFlag[curInd] = READY;
                 }
             }
+            shmPTR->clientFlag = 0;
         }
 
         msleep(1);

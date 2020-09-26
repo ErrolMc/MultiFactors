@@ -26,9 +26,26 @@ void TimerStart(struct timespec *tp)
     clock_gettime(0, tp);
 }
 
-int TimerStop(struct timespec *start)
+int TimerStop_s(struct timespec *start)
 {
     struct timespec end;
     clock_gettime(0, &end);
     return end.tv_sec - start->tv_sec;
+}
+
+long TimerStop_ms(struct timespec *start)
+{
+    struct timespec end;
+    clock_gettime(0, &end);
+
+    long delta_ms = ((end.tv_sec - start->tv_sec) * 1000) + ((end.tv_nsec - start->tv_nsec) / 1000000);
+    return delta_ms;
+}
+
+void BarDisplay(int full, int max)
+{    
+    for (int i = 0; i < full; i++) 
+        printf("#"); 
+    for (int i = 0; i < max-full; i++) 
+        printf("_");    
 }

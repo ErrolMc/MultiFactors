@@ -6,6 +6,65 @@ struct WorkData
     struct SharedMemory *shmPTR;
 };
 
+struct timespec lastUpdateTime;
+int canCheckProgress = 0;
+
+void* ProgressThreadWorker(void *arg)
+{
+    struct WorkData *data = (struct WorkData *)arg;
+    struct SharedMemory *shmPTR = data->shmPTR;
+
+    struct timespec ts;
+    while (1)
+    {
+        if (canCheckProgress)
+        {
+            TimerStart(&ts);
+            long diff = TimerStop_ms(&lastUpdateTime);
+            if (diff > 500)
+            {
+                int active = 0;
+                for (int i = 0; i < INT_BITS; i++)
+                {
+                    if (shmPTR->slotStatus[i] == 1)
+                    {
+                        active = 1;
+                        break;
+                    }
+                }
+
+                if (active)
+                {
+                    printf("Progress: ");
+                    for (int i = 0; i < NUM_SLOTS; i++)
+                    {
+                        int ind = i + 1;
+                        if (shmPTR->slotStatus[i] == 1)
+                        {
+                            float progress = shmPTR->slotProgress[i];
+                            float prog01 = progress / (float)INT_BITS;
+
+                            int prog0100 = (int)(100.0 * prog01);
+                            int progDisplay = (int)((float)PROG_DISPLAY_LENGTH * prog01);
+
+                            printf("Q%d: %d\% |", ind, prog0100); // Q1: 50% |
+                            BarDisplay(progDisplay, PROG_DISPLAY_LENGTH);
+                            printf("| ");
+                        }
+                    }
+                    printf("\n");
+
+                    TimerStart(&lastUpdateTime);
+                }
+            }
+            else
+            {
+                msleep(diff);
+            }
+        }
+    }
+}
+
 void* ThreadWorker(void *arg)
 {
     struct WorkData *data = (struct WorkData *)arg;
@@ -24,12 +83,25 @@ void* ThreadWorker(void *arg)
             int num = shmPTR->slot[slot];
             printf("slot: %d, factor: %d\n", slot, num);
             shmPTR->serverFlag[slot] = 0; // mark as read
+
+            TimerStart(&lastUpdateTime);
+            canCheckProgress = 1;
         }
         else if (shmPTR->slotStatus[slot] == 0) // we are done reading for this slot
             break;
     }
 
-    int timeTaken = TimerStop(&ts);
+    canCheckProgress = 0;
+    for (int i = 0; i < NUM_SLOTS; i++)
+    {
+        if (shmPTR->slotStatus[i] == 1)
+        {
+            canCheckProgress = 1;
+            break;
+        }
+    }
+    
+    int timeTaken = TimerStop_s(&ts);
     printf("slot done: %d, time taken: %ds\n", slot, timeTaken);
 }
 
@@ -55,6 +127,16 @@ int main()
     }
 
     pthread_t *threads = malloc(sizeof(pthread_t) * NUM_SLOTS);
+    pthread_t progThread;
+
+    // progress thread
+    {
+        struct WorkData data;
+        data.shmPTR = shmPTR;
+
+        pthread_create(&progThread, NULL, ProgressThreadWorker, (void*)&data);
+        pthread_detach(progThread);
+    }
 
     while (1)
     {
