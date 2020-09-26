@@ -6,11 +6,9 @@
 #include <pthread.h>
 #include <time.h>
 #include <errno.h>
-
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-
 #include <time.h>
 
 #define INT_BITS 32
@@ -19,8 +17,8 @@
 
 struct SharedMemory
 {
-    int clientFlag;             // 0 when empty, set to 1 when the server should pull data from number     
-    int serverFlag[NUM_SLOTS];  // 0 when free, 1 when ready for the client to read, client sets to 0 to indicate its been read
+    int clientFlag;
+    int serverFlag[NUM_SLOTS];
     
     int number; 
     int slot[NUM_SLOTS];
@@ -28,6 +26,12 @@ struct SharedMemory
     int slotProgress[NUM_SLOTS];
 
     int active;
+};
+
+struct WorkData 
+{
+    int slot;
+    struct SharedMemory *shmPTR;
 };
 
 int msleep(long msec);

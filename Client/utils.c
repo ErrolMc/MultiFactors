@@ -1,5 +1,6 @@
 #include "utils.h"
 
+// Sleeps for an amount of milliseconds
 int msleep(long msec)
 {
     struct timespec ts;
@@ -21,11 +22,13 @@ int msleep(long msec)
     return res;
 }
 
+// Starts a timer
 void TimerStart(struct timespec *tp)
 {
     clock_gettime(0, tp);
 }
 
+// Gets the duration a timer has been active in seconds
 int TimerStop_s(struct timespec *start)
 {
     struct timespec end;
@@ -33,6 +36,7 @@ int TimerStop_s(struct timespec *start)
     return end.tv_sec - start->tv_sec;
 }
 
+// Gets the duration a timer has been active in milliseconds
 long TimerStop_ms(struct timespec *start)
 {
     struct timespec end;
@@ -42,6 +46,7 @@ long TimerStop_ms(struct timespec *start)
     return delta_ms;
 }
 
+// Displays a progress bar in stdout
 void BarDisplay(int full, int max)
 {    
     for (int i = 0; i < full; i++) 

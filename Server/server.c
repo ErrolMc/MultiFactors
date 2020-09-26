@@ -1,28 +1,20 @@
 #include "utils.h"
 
-struct WorkData 
-{
-    int slot;
-    int ind;
-    struct SharedMemory *shmPTR;
-};
-
-static int thread_created_flag = 0;
+// server global variables/flags
+int thread_created_flag = 0;
 int numbersToProcess[NUM_SLOTS * INT_BITS];
 int numbersToProcessFlag[NUM_SLOTS * INT_BITS];
 int startedFactorisingFlag[NUM_SLOTS * INT_BITS];
 pthread_mutex_t mutexArr[NUM_SLOTS];
 
+// Sends a factor back to the client through shared memory using a mutex
 void SendFactor(int number, int factor, int slot, struct SharedMemory* shmPTR)
 {
-    //printf("found factor: %d, for: %d, in slot: %d\n", factor, number, slot);
     pthread_mutex_lock(&mutexArr[slot]); // first get the lock
 
     // wait until the server flag is 0
     while (shmPTR->serverFlag[slot] == 1)
         ;
-
-    //printf("sending factor: %d, for: %d, in slot: %d\n", factor, number, slot);
 
     // server flag is now 0
     shmPTR->slot[slot] = factor;
@@ -31,6 +23,7 @@ void SendFactor(int number, int factor, int slot, struct SharedMemory* shmPTR)
     pthread_mutex_unlock(&mutexArr[slot]); // release the lock
 }
 
+// Factorises a number for a slot and sends the factors back through the shared memory
 void FactoriseNumber(int number, int slot, struct SharedMemory* shmPTR)
 {
     int bound = number / 2;
@@ -38,9 +31,7 @@ void FactoriseNumber(int number, int slot, struct SharedMemory* shmPTR)
     {
         // found factor
         if (number % i == 0)
-        {
             SendFactor(number, i, slot, shmPTR);
-        }
     }
 
     // send the number itself as a factor
@@ -52,38 +43,43 @@ void FactoriseNumber(int number, int slot, struct SharedMemory* shmPTR)
     pthread_mutex_unlock(&mutexArr[slot]); // release the lock
 }
 
+// Thread that is responsable for calculating the factors for one of the numbers in a slot
 void* ThreadWorker(void *arg)
 {
+    // first get the data sent through
     struct WorkData *data = (struct WorkData *)arg;
     int slot = data->slot;
     int ind = data->ind;
     struct SharedMemory *shmPTR = data->shmPTR;
 
+    // calculate some indicies for referene
     int startInd = INT_BITS * slot;
     int localInd = startInd + ind;
     int endInd = startInd + INT_BITS - 1;
 
+    // set the created flag to 0 so the system can create the next thread
     thread_created_flag = 0;
 
     while (1)
-    {
+    {   
+        // if the system is asking this thread to do some processing
         if (numbersToProcessFlag[localInd] == READY)
         {
+            // set some flags to set this thread as in progress
             numbersToProcessFlag[localInd] = IN_PROGRESS;
             startedFactorisingFlag[localInd] = 1;
 
+            // get the number and calculate the factors
             int number = numbersToProcess[localInd];
-            //printf("slot: %d, ind: %d, number: %d, localind: %d\n", slot, ind, number, localInd);
             FactoriseNumber(number, slot, shmPTR);
-            //printf("done factoring slot: %d, ind: %d, number: %d, localind: %d\n", slot, ind, number, localInd);
 
+            // set this thread as done
             numbersToProcessFlag[localInd] = DONE;
 
+            // see if all the other threads for this slot are done
             int done = 1;
-
             for (int i = startInd; i <= endInd; i++)
             {
-                //printf("checking: %d, status: %d, slot: %d, ind: %d\n", i, numbersToProcessFlag[i], slot, ind);
                 if (numbersToProcessFlag[i] == IN_PROGRESS || startedFactorisingFlag[i] == 0)
                 {
                     done = 0;
@@ -91,13 +87,11 @@ void* ThreadWorker(void *arg)
                 }
             }
 
+            // if all the threads for this slot are done, let the client know/reset some flags
             if (done == 1)
             {
-                for (int i = 0; i < INT_BITS; i++)
-                {
-                    int curInd = (INT_BITS * slot) + i;
-                    startedFactorisingFlag[curInd] = 0;
-                }
+                for (int i = startInd; i <= endInd; i++)
+                    startedFactorisingFlag[i] = 0;
                 
                 shmPTR->slotStatus[slot] = 0;
                 printf("slot done: %d\n", slot);
@@ -106,22 +100,71 @@ void* ThreadWorker(void *arg)
     }
 }
 
-int RotateNumber(int n, unsigned int d) 
-{ 
-    /* In n>>d, first d bits are 0.  
-    To put last 3 bits of at  
-    first, do bitwise or of n>>d 
-    with n <<(INT_BITS - d) */
-    return (n >> d)|(n << (INT_BITS - d)); 
-} 
+// Loop that listens to requests from the client through the shared memory
+void TalkToClient(struct SharedMemory* shmPTR)
+{
+    while (1)
+    {
+        // if the client has quit, quit
+        if (shmPTR->active == 0)
+            break;
+
+        // if the client has sent a number through
+        if (shmPTR->clientFlag == 1)
+        {
+            // get the number
+            int num = shmPTR->number;
+
+            // look for a free slot
+            int freeSlot = -1;
+            for (int i = 0; i < NUM_SLOTS; i++)
+            {
+                if (shmPTR->slotStatus[i] == 0)
+                {
+                    freeSlot = i;
+                    break;
+                }
+            }
+
+            // send the slot back to the client
+            shmPTR->number = freeSlot;
+
+            if (freeSlot != -1)
+            {
+                // init the slot in the shared memory
+                shmPTR->slotStatus[freeSlot] = 1;
+                shmPTR->slotProgress[freeSlot] = 0;
+                
+                printf("generating factors for: %d, on slot: %d\n", num, freeSlot);
+
+                // generate the rotations for the number and distribute it to the appropriate threads
+                for (int i = 0; i < INT_BITS; i++)
+                {
+                    int curInd = (INT_BITS * freeSlot) + i; // get the index where the number is going to go
+                    int curNum = abs(RotateNumber(num, i)); // get the number based on the rotation
+
+                    numbersToProcess[curInd] = curNum;      // set the number
+                    numbersToProcessFlag[curInd] = READY;   // let the appropriate thread know that it is ready to process the number
+                }
+            }
+
+            // let the client read the slot
+            shmPTR->clientFlag = 0;
+        }
+
+        msleep(1);
+    }
+}
 
 int main() 
 {
-    
+    // variables for shared memory/threads
     key_t shmKEY;
     int shmID;
     struct SharedMemory *shmPTR;
+    pthread_t *threads = malloc(sizeof(pthread_t) * NUM_SLOTS * INT_BITS);
 
+    // get the shared memory id
     shmKEY = ftok("..", 'x');
     shmID = shmget(shmKEY, sizeof(struct SharedMemory), IPC_CREAT | 0666);
     if (shmID < 0) 
@@ -130,6 +173,7 @@ int main()
         exit(1);
     }
 
+    // get the shared memory pointer
     shmPTR = (struct SharedMemory *)shmat(shmID, NULL, 0);
     if ((int)shmPTR == -1) 
     {
@@ -137,6 +181,7 @@ int main()
         exit(1);
     }
 
+    // init some variables in the shared memory
     shmPTR->clientFlag = 0;
     shmPTR->active = 1;
 
@@ -145,8 +190,6 @@ int main()
         pthread_mutex_init(&mutexArr[i], NULL);
     
     // create the threads
-    pthread_t *threads = malloc(sizeof(pthread_t) * NUM_SLOTS * INT_BITS);
-
     for (int i = 0, ind = 0; i < NUM_SLOTS; i++)
     {
         for (int j = 0; j < INT_BITS; j++, ind++)
@@ -158,59 +201,19 @@ int main()
 
             thread_created_flag = 1;
             pthread_create(&threads[ind], NULL, ThreadWorker, (void*)&data);
-            while (thread_created_flag == 1)
+            while (thread_created_flag == 1) // wait till the current thread has been created before creating the next one
                 ;
         }
         printf("Created threads for slot %d\n", i);
     }
 
-    while (1)
-    {
-        if (shmPTR->active == 0)
-            break;
+    TalkToClient(shmPTR);
 
-        if (shmPTR->clientFlag == 1)
-        {
-            int num = shmPTR->number;
-
-            int freeSlot = -1;
-            for (int i = 0; i < NUM_SLOTS; i++)
-            {
-                if (shmPTR->slotStatus[i] == 0)
-                {
-                    freeSlot = i;
-                    break;
-                }
-            }
-
-            shmPTR->number = freeSlot;
-            
-
-            if (freeSlot != -1)
-            {
-                shmPTR->slotStatus[freeSlot] = 1;
-                shmPTR->slotProgress[freeSlot] = 0;
-                
-                printf("generating factors for: %d, on slot: %d\n", num, freeSlot);
-
-                for (int i = 0; i < INT_BITS; i++)
-                {
-                    int curInd = (INT_BITS * freeSlot) + i;
-                    int curNum = abs(RotateNumber(num, i));
-
-                    numbersToProcess[curInd] = curNum;
-                    numbersToProcessFlag[curInd] = READY;
-                }
-            }
-            shmPTR->clientFlag = 0;
-        }
-
-        msleep(1);
-    }
-
+    // cancel all the threads
     for (int i = 0; i < NUM_SLOTS * INT_BITS; i++)
         pthread_cancel(threads[i]);
 
+    // detatch the shared memory
     shmdt((void *)shmPTR);
     printf("server has detached its shared memory...\n");
     shmctl(shmID, IPC_RMID, NULL);

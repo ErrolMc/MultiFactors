@@ -22,8 +22,8 @@
 
 struct SharedMemory
 {
-    int clientFlag;             // 0 when empty, set to 1 when the server should pull data from number     
-    int serverFlag[NUM_SLOTS];  // 0 when free, 1 when ready for the client to read, client sets to 0 to indicate its been read
+    int clientFlag;             
+    int serverFlag[NUM_SLOTS]; 
     
     int number; 
     int slot[NUM_SLOTS];
@@ -33,6 +33,14 @@ struct SharedMemory
     int active;
 };
 
+struct WorkData 
+{
+    int slot;
+    int ind;
+    struct SharedMemory *shmPTR;
+};
+
 int msleep(long msec);
+int RotateNumber(int n, unsigned int d);
 
 #endif
