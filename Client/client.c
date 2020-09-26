@@ -105,38 +105,46 @@ void TalkToServer(struct SharedMemory* shmPTR)
         char buff[128];
         gets(buff);
 
-        // if we have quit, tell the server to quit
-        if (strcmp(buff, "quit") == 0)
+        // see if the server is ready
+        if (shmPTR->active == 1)
         {
-            shmPTR->active = 0;
-            break;
-        }
+            // if we have quit, tell the server to quit
+            if (strcmp(buff, "quit") == 0)
+            {
+                shmPTR->active = 0;
+                break;
+            }
 
-        // get the number and send it to the server
-        int num = atoi(buff);
+            // get the number and send it to the server
+            int num = atoi(buff);
 
-        shmPTR->number = num;
-        shmPTR->clientFlag = 1;
+            shmPTR->number = num;
+            shmPTR->clientFlag = 1;
 
-        // wait for the server to process the number
-        while (shmPTR->clientFlag == 1)
-            ;
+            // wait for the server to process the number
+            while (shmPTR->clientFlag == 1)
+                ;
 
-        // now that the number is processed, get the slot
-        int slot = shmPTR->number;
-        if (slot != -1)
-        {   
-            // create a thread to listen for the responses for this slot
-            struct WorkData data;
-            data.slot = slot;
-            data.shmPTR = shmPTR;
+            // now that the number is processed, get the slot
+            int slot = shmPTR->number;
+            if (slot != -1)
+            {   
+                // create a thread to listen for the responses for this slot
+                struct WorkData data;
+                data.slot = slot;
+                data.shmPTR = shmPTR;
 
-            pthread_create(&threads[slot], NULL, ThreadWorker, (void*)&data);
-            pthread_detach(threads[slot]);
+                pthread_create(&threads[slot], NULL, ThreadWorker, (void*)&data);
+                pthread_detach(threads[slot]);
+            }
+            else
+            {
+                printf("Cant create slot, please wait for a slot to become available\n");
+            }
         }
         else
         {
-            printf("Cant create slot, please wait for a slot to become available\n");
+            printf("Please wait until the server has created all its threads\n");
         }
     }
 }

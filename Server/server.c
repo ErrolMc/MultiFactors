@@ -183,7 +183,7 @@ int main()
 
     // init some variables in the shared memory
     shmPTR->clientFlag = 0;
-    shmPTR->active = 1;
+    shmPTR->active = 0;
 
     // init thread mutexes
     for (int i = 0; i < NUM_SLOTS; i++)
@@ -206,6 +206,10 @@ int main()
         }
         printf("Created threads for slot %d\n", i);
     }
+
+    // mark the server as ready
+    shmPTR->active = 1;
+    printf("All the threads have been created\n");
 
     TalkToClient(shmPTR);
 
